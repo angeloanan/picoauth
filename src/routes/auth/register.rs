@@ -38,30 +38,25 @@ pub async fn post(
         );
     }
 
-    let db = match state.db.connect() {
-        Ok(db) => db,
-        Err(_) => {
-            warn!("Unable to connect to database");
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(
-                    json!({ "error": "Database is busy - Please try again in a couple of seconds" }),
-                ),
-            );
-        }
+    let Ok(db) = state.db.connect() else {
+        warn!("Unable to connect to database");
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "error": "Database is busy - Please try again in a couple of seconds" })),
+        );
     };
-
     // TODO: HIBP password check?
 
     // Check for duplicate username
-    let username_count = db
-        .execute(
+    let mut username_count = db
+        .query(
             "SELECT COUNT(*) FROM \"users\" WHERE username = ? COLLATE NOCASE",
             params![username.as_str()],
         )
         .await
         .expect("Unable to query database");
-    if username_count > 0 {
+    let username_count = username_count.next().await.unwrap().unwrap();
+    if username_count.get::<u32>(0).unwrap() > 0 {
         return (
             StatusCode::CONFLICT,
             Json(json!({ "error": "Username already taken" })),
@@ -70,22 +65,22 @@ pub async fn post(
 
     // TODO: Email verification
 
-    let password_hash = tokio::task::spawn_blocking(move || password::hash_password(&password))
+    let password_hash = tokio::task::spawn_blocking(move || password::hash(&password))
         .await
         .unwrap();
 
     // Insert user into database
-
-    let insert_result = db.execute(
-        "INSERT INTO \"users\" (username, password_hash, email, display_name) VALUES (?, ?, ?, ?)",
-        params![
-            username.as_str(),
-            password_hash,
-            dto.email,
-            dto.display_name
-        ],
-    )
-    .await;
+    let insert_result = db
+        .execute(
+            "INSERT INTO \"users\" (username, password, email, display_name) VALUES (?, ?, ?, ?)",
+            params![
+                username.as_str(),
+                password_hash,
+                dto.email,
+                dto.display_name
+            ],
+        )
+        .await;
 
     match insert_result {
         Ok(_) => {

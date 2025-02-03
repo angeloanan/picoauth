@@ -1,13 +1,14 @@
 use std::env::VarError::{NotPresent, NotUnicode};
 
 use libsql::{Builder, Database};
+use serde::Deserialize;
 use tokio_util::bytes::Bytes;
 use tracing::{info, warn};
 
 const DATABASE_PATH: &str = "./db.sqlite";
 
 pub async fn prepare() -> Database {
-    let encryption_key = std::env::var("ENCRYPTION_KEY");
+    let encryption_key = std::env::var("DB_ENCRYPTION_KEY");
 
     match encryption_key {
         Ok(key) => {
@@ -24,6 +25,9 @@ pub async fn prepare() -> Database {
 
         Err(NotPresent) => {
             warn!("DATABASE WILL NOT BE ENCRYPTED - No database encryption key supplied!");
+            warn!(
+                "Please check whether if you have provided a `DB_ENCRYPTION_KEY` environment variable."
+            );
             Builder::new_local(DATABASE_PATH)
                 .build()
                 .await
@@ -31,7 +35,7 @@ pub async fn prepare() -> Database {
         }
 
         Err(NotUnicode(_)) => {
-            panic!("Provided database encryption key is not valid UTF-8!")
+            panic!("Provided database encryption key is not a valid UTF-8!")
         }
     }
 }

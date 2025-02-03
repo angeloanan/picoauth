@@ -1,4 +1,4 @@
-use rand::{Rng, RngCore, SeedableRng, prelude};
+use rand::{Rng, SeedableRng};
 
 use totp_rs::{Rfc6238, Secret, TOTP};
 

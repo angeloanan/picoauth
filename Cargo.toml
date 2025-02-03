@@ -6,6 +6,8 @@ edition = "2024"
 [dependencies]
 argon2 = { version = "0.5.3", features = ["std", "password-hash"] }
 axum = "0.8.1"
+dotenvy = "0.15.7"
+jsonwebtoken = "9.3.0"
 libsql = { version = "0.6.0", features = ["encryption"] }
 rand = { version = "0.9.0", features = ["std"] }
 regex = "1.11.1"
