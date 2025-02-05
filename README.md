@@ -13,17 +13,24 @@ stateless-first -- core feature includes login, logout, and jwt issuance
     - [x] http over unix socket
 - [ ] authz
     - [ ] jwt
-        - [ ] access tokens
-        - [ ] refresh token
+        - [x] access token generation
+        - [x] refresh token generation
+        - [ ] re-refresh access token
+        - [ ] access token validation
+        - [ ] refresh token validation
     - [ ] cookie
         - [ ] in-memory redis alternative?
         - [ ] refresh cookie
 - [x] password login
     - [x] registration
-    - [ ] login
-    - [ ] password reset
+    - [x] login
+    - [x] password reset
+    - [ ] account update (display name, email)
     - [ ] account deletion
     - [ ] hibp checking
+- [ ] admin api
+    - [ ] users GET / POST / DELETE
+    - [ ] user GET / PUT / DELETE
 - [ ] multi-factor authentication
     - [ ] registration
     - [ ] deletion

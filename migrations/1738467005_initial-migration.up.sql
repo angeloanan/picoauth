@@ -7,6 +7,7 @@ CREATE TABLE IF NOT EXISTS "users" (
     "email" text DEFAULT NULL,
     --
     "totp_secret" text DEFAULT NULL,
+    "totp_active_at" datetime DEFAULT NULL,
     --
     "requires_password_reset" integer NOT NULL DEFAULT 0,
     "requires_second_factor" integer NOT NULL DEFAULT 0,
@@ -15,3 +16,18 @@ CREATE TABLE IF NOT EXISTS "users" (
     "created_at" datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (id)
 ) RANDOM ROWID;
+
+CREATE TABLE IF NOT EXISTS "revoked_refresh_jwt" (
+    "token" text NOT NULL,
+    "revoked_at" datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (token)
+);
+
+CREATE TABLE IF NOT EXISTS "forgot_password_token" (
+    "token" text NOT NULL,
+    "user_id" integer NOT NULL,
+    "expires_at" datetime NOT NULL,
+    "used_at" datetime DEFAULT NULL,
+    PRIMARY KEY (token),
+    FOREIGN KEY (user_id) REFERENCES users (id) ON UPDATE CASCADE ON DELETE CASCADE
+)

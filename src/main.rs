@@ -32,6 +32,13 @@ pub struct AppState {
 async fn main() {
     tracing_subscriber::fmt::init();
 
+    // Only load .env file on debug builds
+    #[cfg(debug_assertions)]
+    dotenvy::dotenv().ok();
+
+    // Verify proper envvar
+    std::env::var("JWT_SECRET").expect("No JWT_SECRET provided!");
+
     let ct = CancellationToken::new();
     let database = db::prepare().await;
     let mut http_servers: JoinSet<()> = JoinSet::new();

@@ -13,7 +13,7 @@ pub fn generate_secret() -> Secret {
     Secret::Raw(generate_secret_bytes().to_vec())
 }
 
-pub fn check_current(secret_bytes: [u8; 20], token: &str) -> bool {
+pub fn check_current(secret_bytes: &[u8], token: &str) -> bool {
     let mut rfc6238 = Rfc6238::with_defaults(secret_bytes.to_vec()).unwrap();
     rfc6238.account_name("Account name here".to_string());
     rfc6238.issuer("Website name".to_string());

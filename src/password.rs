@@ -2,7 +2,7 @@ use std::{str::FromStr, sync::LazyLock};
 
 use argon2::{
     Argon2, Params, PasswordHash, PasswordHasher, PasswordVerifier,
-    password_hash::{PasswordHashString, SaltString, rand_core::OsRng},
+    password_hash::{SaltString, rand_core::OsRng},
 };
 
 static HASHER: LazyLock<Argon2> = std::sync::LazyLock::new(|| {
@@ -38,9 +38,9 @@ pub fn hash(password: &str) -> Box<str> {
 }
 
 pub fn verify(password: &str, hash: &str) -> bool {
-    let pw_hash = PasswordHashString::from_str(hash).expect("Malformed password hash");
+    let pw_hash = PasswordHash::new(hash).expect("Malformed password hash");
 
     HASHER
-        .verify_password(password.as_bytes(), &pw_hash.password_hash())
+        .verify_password(password.as_bytes(), &pw_hash)
         .is_ok()
 }

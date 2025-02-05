@@ -5,7 +5,7 @@ edition = "2024"
 
 [dependencies]
 argon2 = { version = "0.5.3", features = ["std", "password-hash"] }
-axum = "0.8.1"
+axum = { version = "0.8.1", features = ["macros"] }
 dotenvy = "0.15.7"
 jsonwebtoken = "9.3.0"
 libsql = { version = "0.6.0", features = ["encryption"] }
