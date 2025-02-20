@@ -19,8 +19,5 @@ pub fn check_current(secret_bytes: &[u8], token: &str) -> bool {
     rfc6238.issuer("Website name".to_string());
     let totp = TOTP::from_rfc6238(rfc6238).unwrap();
 
-    match totp.check_current(token) {
-        Ok(_) => true,
-        Err(SystemTimeError) => false,
-    }
+    totp.check_current(token).is_ok()
 }

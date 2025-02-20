@@ -25,8 +25,108 @@ use tracing::{instrument, warn};
 
 use crate::{AppState, common::DATABASE_BUSY_RESPONSE, password};
 
+/// The amount of time that a forgot password token is deemed "Active" / redeemable.
+///
+/// Defaults to 24 Hours
+const FORGOT_PASSWORD_TOKEN_DURATION: Duration = Duration::from_secs(24 * 3600);
+/// The minimum amount of time for a forgot password submission to respond to.
+/// Used to prevent probing / timing attack.
+///
+/// Defaults to 200ms
+const FORGOT_PASSWORD_MINIMUM_TIME: Duration = Duration::from_millis(200);
+/// The minimum amount of time in-between forgot password tokens generation.
+/// Used to prevent spam on the same user
+///
+/// Defaults to 15 minutes
+const FORGOT_PASSWORD_TIME_BETWEEN: Duration = Duration::from_secs(15 * 60); // 15 mins
+/// The maximum amount of active forgot password token that can exist at one time.
+/// Used to prevent (accidental) spam on a user
+///
+/// Defaults to 3
+const FORGOT_PASSWORD_MAX_ACTIVE_TOKEN: u64 = 3;
+
+#[derive(Deserialize)]
+pub struct ForgotPasswordSubmitDto {
+    username: String,
+}
+/// Submit a new forgot password request
+#[instrument(skip(state, req))]
+pub async fn post(
+    State(state): State<AppState>,
+    Json(req): Json<ForgotPasswordSubmitDto>,
+) -> impl IntoResponse {
+    let minimum_time = std::env::var("FORGOT_PASSWORD_MINIMUM_TIME")
+        .map_or(FORGOT_PASSWORD_MINIMUM_TIME, |t| {
+            Duration::from_millis(t.parse().unwrap())
+        });
+    let deadline = Instant::now() + minimum_time;
+
+    // Process
+    let Ok(conn) = state.db.connect() else {
+        warn!("Unable to connect to the database");
+        tokio::time::sleep_until(deadline.into()).await;
+        return DATABASE_BUSY_RESPONSE.clone().into_response();
+    };
+
+    let Ok(mut rows) = conn
+        .query(
+            "SELECT id FROM \"users\" WHERE username = ?",
+            params![req.username.clone()],
+        )
+        .await
+    else {
+        warn!("Unable to query for user existence");
+        tokio::time::sleep_until(deadline.into()).await;
+        return DATABASE_BUSY_RESPONSE.clone().into_response();
+    };
+
+    let Ok(row) = rows.next().await else {
+        warn!("Unable to query for user existence");
+        tokio::time::sleep_until(deadline.into()).await;
+        return DATABASE_BUSY_RESPONSE.clone().into_response();
+    };
+
+    // If user exists, do whole processing, otherwise skip this whole block
+    if let Some(row) = row {
+        let user_id = row.get::<u64>(0).unwrap();
+
+        // Generate token
+        // Initialize new RNG every time function gets called
+        // This hopefully ensures that forward secrecy is maintained
+        let rng = rand::rngs::StdRng::from_os_rng();
+        let token: String = rng
+            .sample_iter(distr::Alphanumeric)
+            .take(64)
+            .map(char::from)
+            .collect();
+
+        let expire_time =
+            UNIX_EPOCH.elapsed().unwrap().as_secs() + FORGOT_PASSWORD_TOKEN_DURATION.as_secs();
+
+        // Store token in database
+        if let Err(e) = conn.execute(
+            "INSERT INTO \"forgot_password_token\" (token, user_id, expires_at) VALUES (?, ?, ?)",
+            params![token, user_id, expire_time],
+        )
+        .await {
+            warn!("Unable to store password token in database, {e}");
+            tokio::time::sleep_until(deadline.into()).await;
+            return DATABASE_BUSY_RESPONSE.clone().into_response();
+        }
+
+        // TODO: Enqueue side-channel message
+    }
+
+    // Wait until minimum time has passed
+    tokio::time::sleep_until(deadline.into()).await;
+
+    // Send response
+    (StatusCode::NO_CONTENT).into_response()
+}
+
 /// Query if URL token is valid
 /// Does not need to contain deadline as user will be probing for a CSPRNG generated token
+#[instrument(skip(state, token))]
 pub async fn get(State(state): State<AppState>, Path(token): Path<String>) -> impl IntoResponse {
     let Ok(conn) = state.db.connect() else {
         warn!("Unable to connect to the database");
@@ -68,98 +168,15 @@ pub async fn get(State(state): State<AppState>, Path(token): Path<String>) -> im
     StatusCode::NO_CONTENT.into_response()
 }
 
-// 24 hour
-const FORGOT_PASSWORD_TOKEN_EXPIRY_DURATION: Duration = Duration::from_secs(24 * 3600);
-
-#[derive(Deserialize)]
-pub struct ForgotPasswordSubmitDto {
-    username: String,
-}
-
-/// Submit a new forgot password request
-#[instrument(skip(state, req))]
-pub async fn post(
-    State(state): State<AppState>,
-    Json(req): Json<ForgotPasswordSubmitDto>,
-) -> impl IntoResponse {
-    let minimum_time = std::env::var("FORGOT_PASSWORD_MINIMUM_TIME")
-        .map_or(Duration::from_millis(200), |t| {
-            Duration::from_millis(t.parse().unwrap())
-        });
-    let deadline = Instant::now() + minimum_time;
-
-    // Process
-    let Ok(conn) = state.db.connect() else {
-        warn!("Unable to connect to the database");
-        tokio::time::sleep_until(deadline.into()).await;
-        return DATABASE_BUSY_RESPONSE.clone().into_response();
-    };
-
-    let Ok(mut rows) = conn
-        .query("SELECT id FROM \"users\" WHERE username = ?", params![
-            req.username.clone()
-        ])
-        .await
-    else {
-        warn!("Unable to query for user existence");
-        tokio::time::sleep_until(deadline.into()).await;
-        return DATABASE_BUSY_RESPONSE.clone().into_response();
-    };
-
-    let Ok(row) = rows.next().await else {
-        warn!("Unable to query for user existence");
-        tokio::time::sleep_until(deadline.into()).await;
-        return DATABASE_BUSY_RESPONSE.clone().into_response();
-    };
-
-    // If user exists, do whole processing, otherwise skip this whole block
-    if let Some(row) = row {
-        let user_id = row.get::<u64>(0).unwrap();
-
-        // Generate token
-        // Initialize new RNG every time function gets called
-        // This hopefully ensures that forward secrecy is maintained
-        let rng = rand::rngs::StdRng::from_os_rng();
-        let token: String = rng
-            .sample_iter(distr::Alphanumeric)
-            .take(64)
-            .map(char::from)
-            .collect();
-
-        let expire_time = UNIX_EPOCH.elapsed().unwrap().as_secs()
-            + FORGOT_PASSWORD_TOKEN_EXPIRY_DURATION.as_secs();
-
-        // Store token in database
-        if let Err(e) = conn.execute(
-            "INSERT INTO \"forgot_password_token\" (token, user_id, expires_at) VALUES (?, ?, ?)",
-            params![token, user_id, expire_time],
-        )
-        .await {
-            warn!("Unable to store password token in database, {e}");
-            tokio::time::sleep_until(deadline.into()).await;
-            return DATABASE_BUSY_RESPONSE.clone().into_response();
-        }
-
-        // TODO: Enqueue side-channel message
-    }
-
-    // Wait until minimum time has passed
-    tokio::time::sleep_until(deadline.into()).await;
-
-    // Send response
-    (StatusCode::NO_CONTENT).into_response()
-}
-
 #[derive(Deserialize)]
 pub struct ForgotPasswordExecuteDto {
-    token: String,
     password: String,
 }
-
 /// Executes the forgot password request
 /// Does not need to contain deadline as user will be probing for a CSPRNG generated token
 pub async fn put(
     State(state): State<AppState>,
+    Path(token): Path<String>,
     Json(req): Json<ForgotPasswordExecuteDto>,
 ) -> impl IntoResponse {
     let Ok(conn) = state.db.connect() else {
@@ -178,7 +195,7 @@ pub async fn put(
     let Ok(mut rows) = txn
         .query(
             "SELECT user_id, expires_at, used_at FROM \"forgot_password_token\" WHERE token = ?",
-            params![req.token.clone()],
+            params![token.clone()],
         )
         .await
     else {
@@ -221,10 +238,10 @@ pub async fn put(
 
     // Update user password
     if let Err(e) = txn
-        .execute("UPDATE \"users\" SET password = ? WHERE id = ?", params![
-            password_hash,
-            user_id
-        ])
+        .execute(
+            "UPDATE \"users\" SET password = ? WHERE id = ?",
+            params![password_hash, user_id],
+        )
         .await
     {
         txn.rollback().await.ok();
@@ -236,7 +253,7 @@ pub async fn put(
     if let Err(e) = txn
         .execute(
             "UPDATE \"forgot_password_token\" SET used_at = ? WHERE token = ?",
-            params![UNIX_EPOCH.elapsed().unwrap().as_secs(), req.token],
+            params![UNIX_EPOCH.elapsed().unwrap().as_secs(), token],
         )
         .await
     {

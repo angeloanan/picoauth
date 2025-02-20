@@ -13,13 +13,19 @@ mod password;
 mod routes;
 mod totp;
 
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
 
-use axum::Router;
+use axum::{Router, routing::get};
+use common::RequestIdCounter;
+use routes::health_check::health_check;
 use tokio::{select, task::JoinSet};
 use tokio_util::sync::CancellationToken;
 use tower_http::{
-    catch_panic::CatchPanicLayer, compression::CompressionLayer, normalize_path::NormalizePathLayer,
+    catch_panic::CatchPanicLayer,
+    compression::CompressionLayer,
+    normalize_path::NormalizePathLayer,
+    request_id::{PropagateRequestIdLayer, SetRequestIdLayer},
+    timeout::{Timeout, TimeoutLayer},
 };
 use tracing::info;
 
@@ -47,16 +53,25 @@ async fn main() {
         db: Arc::new(database),
     };
 
-    let app = Router::new()
+    let mut app = Router::new()
         .nest("/auth", routes::auth::router())
-        .with_state(app_state)
+        .nest("/jwt", routes::jwt::router())
+        .route("/health-check", get(health_check))
         .layer(NormalizePathLayer::trim_trailing_slash())
         .layer(CatchPanicLayer::new())
-        .layer(
+        .layer(SetRequestIdLayer::x_request_id(RequestIdCounter::default()))
+        .layer(PropagateRequestIdLayer::x_request_id())
+        .layer(TimeoutLayer::new(Duration::from_secs(10)))
+        .with_state(app_state);
+
+    if std::env::var("HTTP_COMPRESS").is_ok() {
+        info!("Env var `HTTP_COMPRESS` is set. Compressing responses...");
+        app = app.layer(
             CompressionLayer::new()
                 .zstd(true)
                 .quality(tower_http::CompressionLevel::Precise(19)),
         );
+    }
 
     #[cfg(not(debug_assertions))]
     let socket = tokio::net::UnixListener::bind("/var/run/picoauth.sock")
@@ -74,6 +89,7 @@ async fn main() {
         let ct = ct.clone();
         let app = app.clone();
 
+        info!("Listening on ./picoauth.sock");
         http_servers.spawn(async move {
             select! {
                 _ = ct.cancelled() => {
@@ -89,6 +105,7 @@ async fn main() {
         let ct = ct.clone();
         let app = app.clone();
 
+        info!("Listening on http://0.0.0.0:3000");
         http_servers.spawn(async move {
             select! {
                 _ = ct.cancelled() => {

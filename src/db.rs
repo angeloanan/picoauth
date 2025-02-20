@@ -1,7 +1,6 @@
 use std::env::VarError::{NotPresent, NotUnicode};
 
 use libsql::{Builder, Database};
-use serde::Deserialize;
 use tokio_util::bytes::Bytes;
 use tracing::{info, warn};
 

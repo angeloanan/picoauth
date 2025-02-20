@@ -17,7 +17,7 @@ CREATE TABLE IF NOT EXISTS "users" (
     PRIMARY KEY (id)
 ) RANDOM ROWID;
 
-CREATE TABLE IF NOT EXISTS "revoked_refresh_jwt" (
+CREATE TABLE IF NOT EXISTS "revoked_jwt" (
     "token" text NOT NULL,
     "revoked_at" datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (token)

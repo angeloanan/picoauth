@@ -21,7 +21,7 @@ CREATE TABLE "users" (
     "created_at" datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (id)
 ) RANDOM ROWID;
-CREATE TABLE "revoked_refresh_jwt" (
+CREATE TABLE "revoked_jwt" (
     "token" text NOT NULL,
     "revoked_at" datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (token)
@@ -30,6 +30,7 @@ CREATE TABLE "forgot_password_token" (
     "token" text NOT NULL,
     "user_id" integer NOT NULL,
     "expires_at" datetime NOT NULL,
+    "used_at" datetime DEFAULT NULL,
     PRIMARY KEY (token),
     FOREIGN KEY (user_id) REFERENCES users (id) ON UPDATE CASCADE ON DELETE CASCADE
 );

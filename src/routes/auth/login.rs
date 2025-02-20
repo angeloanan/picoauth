@@ -1,8 +1,10 @@
+use std::time::UNIX_EPOCH;
+
 use axum::{Json, extract::State, http::StatusCode, response::IntoResponse};
 use libsql::params;
 use serde::Deserialize;
 use serde_json::json;
-use tracing::{info, instrument, warn};
+use tracing::{instrument, warn};
 
 use crate::{
     AppState,
@@ -49,7 +51,6 @@ pub async fn post(
     };
 
     let Some(user) = user else {
-        info!("User not found");
         return INVALID_USERNAME_PASSWORD_RESPONSE.clone();
     };
 
@@ -150,13 +151,15 @@ pub async fn post(
         None => None,
     };
 
-    let refresh_token = jwt::issue_refresh_token(db_userid);
+    let current_time = UNIX_EPOCH.elapsed().unwrap().as_secs() as usize;
+    let refresh_token = jwt::issue_refresh_token(db_userid, Some(current_time));
     let access_token = jwt::issue_access_token(
         db_userid,
         &db_username,
         db_display_name.as_deref(),
         db_email.as_deref(),
         email_verified,
+        current_time,
     );
 
     return (

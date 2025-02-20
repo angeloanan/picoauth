@@ -1,6 +1,6 @@
 use std::{string::ToString, sync::LazyLock, time::UNIX_EPOCH};
 
-use jsonwebtoken::{DecodingKey, EncodingKey, Validation};
+use jsonwebtoken::{DecodingKey, EncodingKey, TokenData, Validation};
 use serde::{Deserialize, Serialize};
 
 pub static SECRET_KEY: LazyLock<EncodingKey> = LazyLock::new(|| {
@@ -18,31 +18,34 @@ const REFRESH_TOKEN_EXPIRATION: usize = 604_800; // 1 Week
 const ACCESS_TOKEN_EXPIRATION: usize = 3_600; // 1 Hour
 
 #[derive(Debug, Serialize, Deserialize)]
-struct RefreshClaims {
-    typ: String, // Must be `Refresh`
-    iat: usize,  // Issued at (as UTC timestamp seconds)
-    exp: usize,  // Expiration time (as UTC timestamp seconds)
-    iss: String, // Issuer
-    sub: String, // Subject - User ID
+pub struct RefreshClaims {
+    pub typ: String,      // Must be `Refresh`
+    pub auth_time: usize, // Time when authentication occurred,
+    pub iat: usize,       // Issued at (as UTC timestamp seconds)
+    pub exp: usize,       // Expiration time (as UTC timestamp seconds)
+    pub iss: String,      // Issuer
+    pub sub: String,      // Subject - User ID
 }
 
 /// Our claims struct, it needs to derive `Serialize` and/or `Deserialize`
+/// https://www.iana.org/assignments/jwt/jwt.xhtml
 #[derive(Debug, Serialize, Deserialize)]
-struct Claims {
-    typ: String, // Must be `Access`
-    iat: usize,  // Issued at (as UTC timestamp seconds)
-    exp: usize,  // Expiration time (as UTC timestamp seconds )
-    iss: String, // Issuer
-    sub: String, // Subject - User ID
+pub struct Claims {
+    pub typ: String,      // Must be `Access`
+    pub auth_time: usize, // Time when authentication occurred,
+    pub iat: usize,       // Issued at (as UTC timestamp seconds)
+    pub exp: usize,       // Expiration time (as UTC timestamp seconds )
+    pub iss: String,      // Issuer
+    pub sub: String,      // Subject - User ID
 
     // All custom claims below
-    preferred_username: String,
-    nickname: String,
-    email: Option<String>,
-    email_verified: Option<bool>,
+    pub preferred_username: String,
+    pub nickname: String,
+    pub email: Option<String>,
+    pub email_verified: Option<bool>,
 }
 
-pub fn issue_refresh_token(user_id: u64) -> Box<str> {
+pub fn issue_refresh_token(user_id: u64, auth_time: Option<usize>) -> Box<str> {
     let utc = UNIX_EPOCH.elapsed().unwrap().as_secs() as usize;
 
     let claims = RefreshClaims {
@@ -52,6 +55,7 @@ pub fn issue_refresh_token(user_id: u64) -> Box<str> {
         iat: utc,
         iss: "picoauth".to_string(),
         sub: user_id.to_string(),
+        auth_time: auth_time.unwrap_or(utc),
     };
 
     let jwtstring =
@@ -65,6 +69,7 @@ pub fn issue_access_token(
     display_name: Option<&str>,
     email: Option<&str>,
     email_verified: Option<bool>,
+    auth_time: usize,
 ) -> Box<str> {
     let utc = UNIX_EPOCH.elapsed().unwrap().as_secs() as usize;
 
@@ -74,6 +79,7 @@ pub fn issue_access_token(
         iat: utc,
         iss: "picoauth".to_string(),
         sub: user_id.to_string(),
+        auth_time,
 
         preferred_username: username.to_string(),
         nickname: display_name.map_or(username.to_string(), ToString::to_string),
@@ -86,6 +92,10 @@ pub fn issue_access_token(
     jwtstring.into_boxed_str()
 }
 
-pub fn verify_access_token(token: &str) -> bool {
-    jsonwebtoken::decode::<Claims>(token, &DECODING_KEY, &Validation::default()).is_ok()
+pub fn verify_access_token(token: &str) -> jsonwebtoken::errors::Result<TokenData<Claims>> {
+    jsonwebtoken::decode::<Claims>(token, &DECODING_KEY, &Validation::default())
+}
+
+pub fn verify_refresh_token(token: &str) -> jsonwebtoken::errors::Result<TokenData<RefreshClaims>> {
+    jsonwebtoken::decode::<RefreshClaims>(token, &DECODING_KEY, &Validation::default())
 }
